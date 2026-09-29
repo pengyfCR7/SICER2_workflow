@@ -1,0 +1,5 @@
+group	sample	treatment_bam	control_bam	layout
+WT_WL	WT_WL_rep1	/path/to/WT_WL_rep1.IP.bam	/path/to/IgG_A.bam	SE
+WT_WL	WT_WL_rep2	/path/to/WT_WL_rep2.IP.bam	/path/to/IgG_A.bam	SE
+WT_lowRFR	WT_lowRFR_rep1	/path/to/WT_lowRFR_rep1.IP.bam	/path/to/IgG_A.bam	SE
+WT_lowRFR	WT_lowRFR_rep2	/path/to/WT_lowRFR_rep2.IP.bam	/path/to/IgG_A.bam	SE

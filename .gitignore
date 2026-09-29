@@ -1,0 +1,6 @@
+.snakemake/
+results/
+tests/.smoke/
+.snakemake/
+__pycache__/
+*.pyc

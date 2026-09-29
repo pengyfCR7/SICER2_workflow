@@ -1,0 +1,32 @@
+[inputs]
+samples = "config/samples.tsv"
+contrasts = "config/contrasts.tsv"
+
+[output]
+result_dir = "results"
+
+[commands]
+sicer2_python = "/opt/conda-envs/SICER2/2.1.1/bin/python"
+samtools = "/opt/conda-envs/samtools/1.24/bin/samtools"
+bedtools = "/opt/conda-envs/bedtools/2.31.1/bin/bedtools"
+
+[software]
+sicer2_module = "SICER2/2.1.1"
+
+[sicer2_call]
+chrom_sizes = "config/TAIR10.nuclear.chrom.sizes"
+redundancy_threshold = 1
+window_size = 200
+fragment_size = 150
+effective_genome_fraction = 0.8
+gap_size = 600
+false_discovery_rate = 0.01
+extra = ""
+
+[sicer2_diff]
+false_discovery_rate_df = 0.01
+min_fold_change = 1.0
+extra = ""
+
+[resources]
+sicer2_threads = 5
