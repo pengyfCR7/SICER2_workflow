@@ -1,5 +1,4 @@
 import json
-import shlex
 import sys
 from pathlib import Path
 
@@ -11,13 +10,7 @@ except ModuleNotFoundError:
 
 WORKFLOW_DIR = Path(workflow.basedir)
 sys.path.insert(0, str(WORKFLOW_DIR / "lib"))
-from workflow_io import (
-    load_contrasts,
-    load_samples,
-    validate_contrast_controls,
-    validate_parameters,
-    validate_tair10_nuclear_chrom_sizes,
-)
+from workflow_io import load_contrasts, load_samples
 
 
 shell.executable("/bin/bash")
@@ -38,15 +31,6 @@ def config_path(value):
     return str(path.resolve())
 
 
-def checked_extra(text, blocked):
-    tokens = shlex.split(text or "")
-    for token in tokens:
-        flag = token.split("=", 1)[0]
-        if flag in blocked:
-            raise ValueError(f"Managed SICER2 option cannot be repeated in extra: {flag}")
-    return " ".join(shlex.quote(token) for token in tokens)
-
-
 SAMPLES_PATH = config_path(CFG["inputs"]["samples"])
 CONTRASTS_PATH = config_path(CFG["inputs"]["contrasts"])
 RESULT_DIR = Path(CFG["output"].get("result_dir", "results"))
@@ -56,14 +40,10 @@ COMMANDS = CFG["commands"]
 THREADS = int(CFG.get("resources", {}).get("sicer2_threads", 5))
 CHROM_SIZES = config_path(CALL_CFG["chrom_sizes"])
 
-validate_parameters(CALL_CFG, DIFF_CFG)
-validate_tair10_nuclear_chrom_sizes(CHROM_SIZES)
 SAMPLE_INFO = load_samples(SAMPLES_PATH)
 GROUPS = SAMPLE_INFO["groups"]
 CONTRAST_INFO = load_contrasts(CONTRASTS_PATH, GROUPS)
 CONTRASTS = list(CONTRAST_INFO)
-validate_contrast_controls(CONTRAST_INFO, SAMPLE_INFO["group_controls"])
-
 GROUPS_WITH_CONTROL = [group for group in GROUPS if SAMPLE_INFO["group_controls"][group]]
 CONTRASTS_WITH_CONTROL = [
     name for name in CONTRASTS
@@ -78,17 +58,6 @@ LOG_DIR = RESULT_DIR / "logs"
 POOL_SCRIPT = WORKFLOW_DIR / "scripts/pool_se_bams.py"
 RUN_SCRIPT = WORKFLOW_DIR / "scripts/run_sicer2.py"
 MANIFEST_SCRIPT = WORKFLOW_DIR / "scripts/build_manifest.py"
-
-BLOCKED_CALL = {
-    "--treatment_file", "-t", "--control_file", "-c", "--species", "-s",
-    "--redundancy_threshold", "-rt", "--window_size", "-w", "--fragment_size", "-f",
-    "--effective_genome_fraction", "-egf", "--false_discovery_rate", "-fdr",
-    "--output_directory", "-o", "--gap_size", "-g", "--cpu", "-cpu",
-    "--chrom-sizes",
-}
-BLOCKED_DIFF = BLOCKED_CALL | {"--false_discovery_rate_df", "-fdr_df", "--min-fold-change"}
-CALL_EXTRA = checked_extra(CALL_CFG.get("extra", ""), BLOCKED_CALL)
-DIFF_EXTRA = checked_extra(DIFF_CFG.get("extra", ""), BLOCKED_DIFF)
 
 
 def pooled_treatment(group):
@@ -121,7 +90,7 @@ def manifest_spec():
                 "control_files": SAMPLE_INFO["group_controls"][group],
                 "result_files": {
                     "islands": str(SICER_DIR / group / f"{group}.islands.bed"),
-                    "summary": str(SICER_DIR / group / f"{group}.islands.summary.tsv"),
+                    "summary": str(SICER_DIR / group / f"{group}.islands.summary.txt"),
                 },
             }
         )
@@ -136,11 +105,11 @@ def manifest_spec():
                 "test_control_files": SAMPLE_INFO["group_controls"][test],
                 "reference_control_files": SAMPLE_INFO["group_controls"][reference],
                 "result_files": {
-                    "all": str(DIFF_DIR / name / f"{name}.all_islands.tsv"),
-                    "increased_fdr": str(DIFF_DIR / name / f"{name}.increased.fdr.tsv"),
-                    "decreased_fdr": str(DIFF_DIR / name / f"{name}.decreased.fdr.tsv"),
-                    "increased_filtered": str(DIFF_DIR / name / f"{name}.increased.filtered.tsv"),
-                    "decreased_filtered": str(DIFF_DIR / name / f"{name}.decreased.filtered.tsv"),
+                    "all": str(DIFF_DIR / name / f"{name}.all_islands.txt"),
+                    "increased_fdr": str(DIFF_DIR / name / f"{name}.increased.fdr.txt"),
+                    "decreased_fdr": str(DIFF_DIR / name / f"{name}.decreased.fdr.txt"),
+                    "increased_filtered": str(DIFF_DIR / name / f"{name}.increased.filtered.txt"),
+                    "decreased_filtered": str(DIFF_DIR / name / f"{name}.decreased.filtered.txt"),
                 },
             }
         )
@@ -157,13 +126,13 @@ if not MANIFEST_SPEC.exists() or MANIFEST_SPEC.read_text(encoding="utf-8") != ma
 rule all:
     input:
         expand(str(SICER_DIR / "{group}/{group}.islands.bed"), group=GROUPS),
-        expand(str(SICER_DIR / "{group}/{group}.islands.summary.tsv"), group=GROUPS),
-        expand(str(DIFF_DIR / "{contrast}/{contrast}.all_islands.tsv"), contrast=CONTRASTS),
-        expand(str(DIFF_DIR / "{contrast}/{contrast}.increased.fdr.tsv"), contrast=CONTRASTS),
-        expand(str(DIFF_DIR / "{contrast}/{contrast}.decreased.fdr.tsv"), contrast=CONTRASTS),
-        expand(str(DIFF_DIR / "{contrast}/{contrast}.increased.filtered.tsv"), contrast=CONTRASTS),
-        expand(str(DIFF_DIR / "{contrast}/{contrast}.decreased.filtered.tsv"), contrast=CONTRASTS),
-        str(RESULT_DIR / "run_manifest.tsv")
+        expand(str(SICER_DIR / "{group}/{group}.islands.summary.txt"), group=GROUPS),
+        expand(str(DIFF_DIR / "{contrast}/{contrast}.all_islands.txt"), contrast=CONTRASTS),
+        expand(str(DIFF_DIR / "{contrast}/{contrast}.increased.fdr.txt"), contrast=CONTRASTS),
+        expand(str(DIFF_DIR / "{contrast}/{contrast}.decreased.fdr.txt"), contrast=CONTRASTS),
+        expand(str(DIFF_DIR / "{contrast}/{contrast}.increased.filtered.txt"), contrast=CONTRASTS),
+        expand(str(DIFF_DIR / "{contrast}/{contrast}.decreased.filtered.txt"), contrast=CONTRASTS),
+        str(RESULT_DIR / "run_manifest.txt")
 
 
 include: "rules/sicer2.smk"

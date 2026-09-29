@@ -3,7 +3,7 @@ rule pool_treatment_bed:
         lambda wildcards: SAMPLE_INFO["group_treatments"][wildcards.group]
     output:
         bed=temp(str(WORK_DIR / "pooled/{group}.treatment.bed")),
-        stats=temp(str(WORK_DIR / "pooled/{group}.treatment.stats.tsv"))
+        stats=temp(str(WORK_DIR / "pooled/{group}.treatment.stats.txt"))
     log:
         str(LOG_DIR / "pool/{group}.treatment.log")
     params:
@@ -29,7 +29,7 @@ rule pool_control_bed:
         lambda wildcards: SAMPLE_INFO["group_controls"][wildcards.group]
     output:
         bed=temp(str(WORK_DIR / "pooled/{group}.control.bed")),
-        stats=temp(str(WORK_DIR / "pooled/{group}.control.stats.tsv"))
+        stats=temp(str(WORK_DIR / "pooled/{group}.control.stats.txt"))
     log:
         str(LOG_DIR / "pool/{group}.control.log")
     params:
@@ -61,7 +61,7 @@ rule sicer2_call:
         unpack(call_inputs)
     output:
         islands=str(SICER_DIR / "{group}/{group}.islands.bed"),
-        summary=str(SICER_DIR / "{group}/{group}.islands.summary.tsv"),
+        summary=str(SICER_DIR / "{group}/{group}.islands.summary.txt"),
         raw=directory(str(SICER_DIR / "{group}/raw"))
     threads:
         THREADS
@@ -71,14 +71,14 @@ rule sicer2_call:
         python=COMMANDS["sicer2_python"],
         script=str(RUN_SCRIPT),
         chrom_sizes=CHROM_SIZES,
-        control=lambda wildcards, input: f"--control_file {shlex.quote(str(input.control))}" if hasattr(input, "control") else "",
+        control=lambda wildcards, input: f"--control_file {input.control}" if hasattr(input, "control") else "",
         rt=int(CALL_CFG["redundancy_threshold"]),
         window=int(CALL_CFG["window_size"]),
         fragment=int(CALL_CFG["fragment_size"]),
         egf=float(CALL_CFG["effective_genome_fraction"]),
         gap=int(CALL_CFG["gap_size"]),
         fdr=float(CALL_CFG["false_discovery_rate"]),
-        extra=CALL_EXTRA
+        extra=CALL_CFG.get("extra", "")
     shell:
         """
         mkdir -p {output.raw:q} $(dirname {log:q})
@@ -101,6 +101,8 @@ rule sicer2_call:
 
 def diff_inputs(wildcards):
     test, reference = contrast_groups(wildcards.contrast)
+    if (test in GROUPS_WITH_CONTROL) != (reference in GROUPS_WITH_CONTROL):
+        raise ValueError(f"Contrast {wildcards.contrast} mixes groups with and without control")
     inputs = {
         "test": pooled_treatment(test),
         "reference": pooled_treatment(reference),
@@ -115,11 +117,11 @@ rule sicer2_diff:
     input:
         unpack(diff_inputs)
     output:
-        all=str(DIFF_DIR / "{contrast}/{contrast}.all_islands.tsv"),
-        increased_fdr=str(DIFF_DIR / "{contrast}/{contrast}.increased.fdr.tsv"),
-        decreased_fdr=str(DIFF_DIR / "{contrast}/{contrast}.decreased.fdr.tsv"),
-        increased_filtered=str(DIFF_DIR / "{contrast}/{contrast}.increased.filtered.tsv"),
-        decreased_filtered=str(DIFF_DIR / "{contrast}/{contrast}.decreased.filtered.tsv"),
+        all=str(DIFF_DIR / "{contrast}/{contrast}.all_islands.txt"),
+        increased_fdr=str(DIFF_DIR / "{contrast}/{contrast}.increased.fdr.txt"),
+        decreased_fdr=str(DIFF_DIR / "{contrast}/{contrast}.decreased.fdr.txt"),
+        increased_filtered=str(DIFF_DIR / "{contrast}/{contrast}.increased.filtered.txt"),
+        decreased_filtered=str(DIFF_DIR / "{contrast}/{contrast}.decreased.filtered.txt"),
         raw=directory(str(DIFF_DIR / "{contrast}/raw"))
     threads:
         THREADS
@@ -130,7 +132,7 @@ rule sicer2_diff:
         script=str(RUN_SCRIPT),
         chrom_sizes=CHROM_SIZES,
         controls=lambda wildcards, input: (
-            f"--control_file {shlex.quote(str(input.test_control))} {shlex.quote(str(input.reference_control))}"
+            f"--control_file {input.test_control} {input.reference_control}"
             if hasattr(input, "test_control") else ""
         ),
         rt=int(CALL_CFG["redundancy_threshold"]),
@@ -141,7 +143,7 @@ rule sicer2_diff:
         fdr=float(CALL_CFG["false_discovery_rate"]),
         fdr_df=float(DIFF_CFG["false_discovery_rate_df"]),
         min_fc=float(DIFF_CFG["min_fold_change"]),
-        extra=DIFF_EXTRA
+        extra=DIFF_CFG.get("extra", "")
     shell:
         """
         mkdir -p {output.raw:q} $(dirname {log:q})
@@ -169,11 +171,11 @@ rule sicer2_diff:
 
 rule run_manifest:
     input:
-        calls=expand(str(SICER_DIR / "{group}/{group}.islands.summary.tsv"), group=GROUPS),
-        diffs=expand(str(DIFF_DIR / "{contrast}/{contrast}.all_islands.tsv"), contrast=CONTRASTS),
+        calls=expand(str(SICER_DIR / "{group}/{group}.islands.summary.txt"), group=GROUPS),
+        diffs=expand(str(DIFF_DIR / "{contrast}/{contrast}.all_islands.txt"), contrast=CONTRASTS),
         spec=str(MANIFEST_SPEC)
     output:
-        str(RESULT_DIR / "run_manifest.tsv")
+        str(RESULT_DIR / "run_manifest.txt")
     params:
         python=COMMANDS["sicer2_python"],
         script=str(MANIFEST_SCRIPT)

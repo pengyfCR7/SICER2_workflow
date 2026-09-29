@@ -20,7 +20,7 @@ caller 共享的稳定接口是 processed BAM，没有必要把两套参数和�
 
 ## 输入
 
-`config/samples.tsv` 每行表示一个 biological replicate：
+`config/samples.txt` 每行表示一个 biological replicate：
 
 ```text
 group  sample  treatment_bam  control_bam  layout
@@ -51,7 +51,7 @@ SICER2 自身仍会按 `redundancy_threshold` 在 pooled tags 上处理相同
 `(strand, start, end)` 的 reads；默认阈值 1 因而可能合并来自不同 libraries 的重合
 tags。这是保留的 SICER 原生行为，不是 workflow 的文件去重。
 
-`config/contrasts.tsv` 定义 differential 方向：
+`config/contrasts.txt` 定义 differential 方向：
 
 ```text
 contrast  test  reference
@@ -87,10 +87,8 @@ call FDR。公开数据记录见
 没有公开这些数值参数：
 [Willige et al.](https://pmc.ncbi.nlm.nih.gov/articles/PMC9169284/)。
 
-`extra` 只用于没有单列在 TOML 中的 SICER 原生选项，例如 `--e_value`、
-`--significant_reads` 或 `--verbose`。workflow 管理的 treatment/control、chrom sizes、
-window、gap、fragment、EGF、两个 FDR 和 CPU 等参数若在 `extra` 中重复，会在建 DAG
-时直接报错，避免命令行出现两套相互冲突的值。
+`extra` 原样附加到 SICER 命令末尾，只用于没有单列在 TOML 中的原生选项，例如
+`--e_value`、`--significant_reads` 或 `--verbose`；不要在这里重复已有参数。
 
 ### TAIR10 genome size
 
@@ -107,10 +105,10 @@ window、gap、fragment、EGF、两个 FDR 和 CPU 等参数若在 `extra` 中�
 
 若 contrast 是 `test` 对 `reference`：
 
-- `increased.fdr.tsv`：`FDR_test_vs_reference <= false_discovery_rate_df`
-- `decreased.fdr.tsv`：`FDR_reference_vs_test <= false_discovery_rate_df`
-- `increased.filtered.tsv`：再要求 `test/reference >= min_fold_change`
-- `decreased.filtered.tsv`：再要求 `test/reference <= 1/min_fold_change`
+- `increased.fdr.txt`：`FDR_test_vs_reference <= false_discovery_rate_df`
+- `decreased.fdr.txt`：`FDR_reference_vs_test <= false_discovery_rate_df`
+- `increased.filtered.txt`：再要求 `test/reference >= min_fold_change`
+- `decreased.filtered.txt`：再要求 `test/reference <= 1/min_fold_change`
 
 `min_fold_change=1.0` 不增加 effect-size 门槛；设为 `1.3` 时，decreased 要求
 `test/reference <= 0.7692`。FDR-only 与 FDR+FC 文件始终分别保存。
@@ -124,23 +122,23 @@ SICER2 `sicer_df` 比较 pooled libraries，不建模 biological-replicate varia
 results/
   sicer2/<group>/
     <group>.islands.bed
-    <group>.islands.summary.tsv
+    <group>.islands.summary.txt
     raw/
   sicer2_diff/<contrast>/
-    <contrast>.all_islands.tsv
-    <contrast>.increased.fdr.tsv
-    <contrast>.decreased.fdr.tsv
-    <contrast>.increased.filtered.tsv
-    <contrast>.decreased.filtered.tsv
+    <contrast>.all_islands.txt
+    <contrast>.increased.fdr.txt
+    <contrast>.decreased.fdr.txt
+    <contrast>.increased.filtered.txt
+    <contrast>.decreased.filtered.txt
     raw/
-  run_manifest.tsv
+  run_manifest.txt
   logs/
 ```
 
 `raw/` 保留 SICER2 tool-native 文件；顶层文件提供稳定下游接口。manifest 记录每个
 group 的真实输入文件、参数、module/package version 和结果数量。
 有 control 时，`*.islands.bed` 是通过 call FDR 的 domains；
-`*.islands.summary.tsv` 保留全部候选 domains 及其 read counts、p-value、fold
+`*.islands.summary.txt` 保留全部候选 domains 及其 read counts、p-value、fold
 enrichment 和 FDR，便于日后改阈值而不重跑 SICER。无 control 时二者都来自
 SICER 的 score-island 输出，summary 只增加稳定列名。
 文件身份以 `device:inode:resolved_path` 记录；因此 manifest 同时展示用户提供文件最终

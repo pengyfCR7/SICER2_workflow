@@ -1,6 +1,6 @@
 [inputs]
-samples = "config/samples.tsv"
-contrasts = "config/contrasts.tsv"
+samples = "config/samples.txt"
+contrasts = "config/contrasts.txt"
 
 [output]
 result_dir = "results"

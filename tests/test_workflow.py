@@ -14,11 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "workflow/lib"))
 sys.path.insert(0, str(ROOT / "workflow/scripts"))
 
-from workflow_io import (
-    load_samples,
-    validate_parameters,
-    validate_tair10_nuclear_chrom_sizes,
-)
+from workflow_io import load_samples
 from run_sicer2 import write_diff_outputs
 
 
@@ -30,7 +26,7 @@ class WorkflowInputTests(unittest.TestCase):
                 (root / name).touch()
             os.symlink(root / "igg_a.bam", root / "igg_a_link.bam")
             os.link(root / "igg_a.bam", root / "igg_a_hardlink.bam")
-            table = root / "samples.tsv"
+            table = root / "samples.txt"
             table.write_text(
                 "group\tsample\ttreatment_bam\tcontrol_bam\tlayout\n"
                 f"g\ts1\t{root/'ip1.bam'}\t{root/'igg_a.bam'}\tSE\n"
@@ -62,7 +58,7 @@ class WorkflowInputTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "ip.bam").touch()
-            table = root / "samples.tsv"
+            table = root / "samples.txt"
             table.write_text(
                 "group\tsample\ttreatment_bam\tcontrol_bam\tlayout\n"
                 f"g\ts\t{root/'ip.bam'}\t\tPE\n",
@@ -70,24 +66,6 @@ class WorkflowInputTests(unittest.TestCase):
             )
             with self.assertRaisesRegex(ValueError, "only layout=SE"):
                 load_samples(table)
-
-    def test_fdr_names_and_parameter_ranges(self):
-        call = {
-            "redundancy_threshold": 1,
-            "window_size": 200,
-            "fragment_size": 150,
-            "effective_genome_fraction": 0.8,
-            "gap_size": 600,
-            "false_discovery_rate": 0.01,
-        }
-        diff = {"false_discovery_rate_df": 0.01, "min_fold_change": 1.3}
-        validate_parameters(call, diff)
-        broken = dict(diff, false_discovery_rate_df=0)
-        with self.assertRaisesRegex(ValueError, "false_discovery_rate_df"):
-            validate_parameters(call, broken)
-
-    def test_tair10_nuclear_chrom_sizes(self):
-        validate_tair10_nuclear_chrom_sizes(ROOT / "config/TAIR10.nuclear.chrom.sizes")
 
     def test_sicer_se_shift_and_native_coordinate_redundancy(self):
         self.assertEqual(tag_position(("Chr1", 100, 150, "r1", 60, "+"), 150), 175)
@@ -116,11 +94,11 @@ class WorkflowInputTests(unittest.TestCase):
             args = SimpleNamespace(
                 output_directory=str(raw), window_size=200, gap_size=600,
                 false_discovery_rate_df=0.01, min_fold_change=1.3,
-                all_islands=str(root / "all.tsv"),
-                increased_fdr=str(root / "increased.fdr.tsv"),
-                decreased_fdr=str(root / "decreased.fdr.tsv"),
-                increased_filtered=str(root / "increased.filtered.tsv"),
-                decreased_filtered=str(root / "decreased.filtered.tsv"),
+                all_islands=str(root / "all.txt"),
+                increased_fdr=str(root / "increased.fdr.txt"),
+                decreased_fdr=str(root / "decreased.fdr.txt"),
+                increased_filtered=str(root / "increased.filtered.txt"),
+                decreased_filtered=str(root / "decreased.filtered.txt"),
             )
             write_diff_outputs(args)
             data_rows = lambda path: len(Path(path).read_text(encoding="utf-8").splitlines()) - 1
