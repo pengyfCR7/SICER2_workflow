@@ -70,7 +70,6 @@ def main():
     parser.add_argument("--bedtools", required=True)
     parser.add_argument("--chrom-sizes", required=True)
     parser.add_argument("--output", required=True)
-    parser.add_argument("--stats", required=True)
     parser.add_argument("--bam", nargs="+", required=True)
     args = parser.parse_args()
 
@@ -79,7 +78,6 @@ def main():
         validate_bam(args.samtools, bam)
 
     Path(args.output).parent.mkdir(parents=True, exist_ok=True)
-    Path(args.stats).parent.mkdir(parents=True, exist_ok=True)
     merge, bed = stream_bed(args.samtools, args.bedtools, args.bam)
     kept = 0
     excluded = 0
@@ -103,13 +101,9 @@ def main():
         )
     if kept == 0:
         raise ValueError("No reads remain on chromosomes listed in --chrom-sizes")
-
-    with open(args.stats, "w", encoding="utf-8") as handle:
-        handle.write("metric\tvalue\n")
-        handle.write(f"input_file_count\t{len(args.bam)}\n")
-        handle.write(f"nuclear_bed_reads\t{kept}\n")
-        handle.write(f"excluded_contig_reads\t{excluded}\n")
-        handle.write(f"input_files\t{';'.join(args.bam)}\n")
+    print(f"Input BAMs: {len(args.bam)}")
+    print(f"Nuclear BED reads: {kept}")
+    print(f"Excluded contig reads: {excluded}")
 
 
 if __name__ == "__main__":

@@ -1,26 +1,28 @@
 # SICER2_workflow
 
-一个只负责 SICER2 domain calling 和 differential islands 的简洁 Snakemake
-workflow。输入必须是已经完成比对和必要过滤的 single-end BAM；本仓库不负责
-FASTQ 质控、比对、MACS3、IDR 或 bigWig。
+这是一个只负责运行 SICER2 的简洁 Snakemake workflow：
 
 ```text
 processed SE BAM
-  -> pooled treatment/control BED6
-  -> SICER2 enriched domains
-  -> SICER2 differential islands
-  -> optional fold-change filtering
+  -> 按 group pooling
+  -> sicer domain calling
+  -> 按 contrast 运行 sicer_df differential calling
 ```
 
-## 为什么单独建仓库
+本仓库不负责 FASTQ、比对、MACS3、IDR、bigWig 或下游注释。
 
-MACS3/IDR 主要围绕 peak、summit 和 replicate reproducibility；SICER2 使用
-window/gap 将分散信号连接为 domains，并有自己的 differential-island 算法。两类
-caller 共享的稳定接口是 processed BAM，没有必要把两套参数和输出揉进同一 DAG。
+当前阶段的目标是先跑通流程并熟悉 `sicer` / `sicer_df` 的原生结果。因此：
 
-## 输入
+- SICER2 生成什么就保留什么。
+- 原生输出文件名不修改。
+- 不另外生成标准化结果表。
+- 不拆分 increased/decreased 表。
+- 不追加 fold-change 列，也不做二次 fold-change 筛选。
+- 下游筛选、注释和表格整理以后单独实现。
 
-`config/samples.txt` 每行表示一个 biological replicate：
+## 输入表
+
+`config/samples.txt` 每行是一个 biological replicate，使用 tab 分隔：
 
 ```text
 group  sample  treatment_bam  control_bam  layout
@@ -28,130 +30,105 @@ WT_WL  WT_WL_rep1  /path/IP1.bam  /path/IgG_A.bam  SE
 WT_WL  WT_WL_rep2  /path/IP2.bam  /path/IgG_A.bam  SE
 ```
 
-- `control_bam` 可以是 Input DNA、IgG 或留空。
+- `sample` 必须唯一。
+- `control_bam` 可以是 Input、IgG 或留空。
 - 同一 group 必须全部有 control 或全部没有 control。
-- 第一版只接受 `layout=SE`。除检查表格外，pooling 前还会检查 BAM flag；检测到
-  paired reads 会立即终止。
-- biological replicates 在内存管道中 merge 后转换成 read-level BED6，不保存大型
+- 第一版只接受 single-end BAM。除检查 `layout=SE` 外，pooling 前也会检查 BAM
+  flag；检测到 paired reads 会停止。
+- 多个 treatment BAM 通过内存管道 merge 后转换为一个 read-level BED6，不保存
   pooled BAM。
-- 只保留 `chrom_sizes` 中列出的 contigs；默认是 TAIR10 的 `Chr1`–`Chr5`。
-- BED6 保留原始 strand；SICER 的 SE tag position 为正链 `start + 75`、负链
-  `end - 1 - 75`（`fragment_size=150`）。
+- pooled BED 只保留 `config/TAIR10.nuclear.chrom.sizes` 中的 Chr1–Chr5。
 
-### Shared control 的去重边界
-
-同一个 control BAM 可能在多个 sample 行中重复填写。例如两个 IP replicates 共用
-同一个 IgG library。workflow 会根据解析后的真实文件身份去重：相同文件路径、指向
-同一文件的 symlink 或 hardlink 只 pool 一次。
+同一个 control 文件在多行重复填写时，只 pool 一次。文件身份按真实文件判断，所以
+普通路径、指向同一文件的 symlink 和 hardlink 会被视作同一个文件。
 
 > Deduplication of shared controls is performed by input-file identity, not genomic read coordinates.
 
-两个不同 control BAM 即使包含坐标相同的 reads，也都会进入 pooled BED。随后
-SICER2 自身仍会按 `redundancy_threshold` 在 pooled tags 上处理相同
-`(strand, start, end)` 的 reads；默认阈值 1 因而可能合并来自不同 libraries 的重合
-tags。这是保留的 SICER 原生行为，不是 workflow 的文件去重。
+两个独立 BAM 中坐标相同的 reads 都会先进入 pooled BED。随后 SICER 根据
+`redundancy_threshold` 执行自身的原生坐标去冗余。
 
-`config/contrasts.txt` 定义 differential 方向：
+`config/contrasts.txt` 定义 `sicer_df` 的输入顺序：
 
 ```text
 contrast  test  reference
 lowRFR_vs_WL  WT_lowRFR  WT_WL
 ```
 
-空表（只保留表头）表示不运行 differential calling。
+空表（只保留表头）表示只运行 `sicer`，不运行 `sicer_df`。
 
 ## 参数
 
-TOML 字段沿用 SICER2 的原始参数名称。两个 FDR 必须区分：
+主要参数在 `config/config.toml` 中：
 
-- `[sicer2_call].false_discovery_rate` 对应 `--false_discovery_rate/-fdr`，用于每个
-  condition 独立 call enriched islands。
-- `[sicer2_diff].false_discovery_rate_df` 对应
-  `--false_discovery_rate_df/-fdr_df`，用于两个 libraries 的 differential change。
-- 运行 differential 时两个参数会同时传入。
-- `min_fold_change` 是 SICER statistical significance 之后由 workflow 添加的
-  effect-size filter，不是 SICER 原生统计参数。
+```toml
+[sicer2_call]
+chrom_sizes = "config/TAIR10.nuclear.chrom.sizes"
+redundancy_threshold = 1
+window_size = 200
+fragment_size = 150
+effective_genome_fraction = 0.8
+gap_size = 600
+false_discovery_rate = 0.01
+extra = ""
 
-当前配置是 **Arabidopsis H2A.Z-informed hybrid preset**：
+[sicer2_diff]
+false_discovery_rate_df = 0.01
+extra = ""
+```
+
+两个 FDR 是 SICER2 原生运行参数：
+
+- `false_discovery_rate`：每个 library call enriched islands 时使用。
+- `false_discovery_rate_df`：`sicer_df` 比较 union islands 时使用。
+
+`sicer_df` 会同时收到这两个参数。workflow 不在 SICER2 运行结束后再次按 FDR 或
+fold change 筛选。
+
+`extra` 原样附加到命令末尾，可用于 `--e_value`、`--significant_reads` 或
+`--verbose` 等未单列参数；不要在其中重复已有参数。
+
+当前参数是 **Arabidopsis H2A.Z-informed hybrid preset**：
 
 ```text
 公开 TAIR10 H2A.Z：1 / 200 / 100 / 0.8 / 600 / 0.01
 当前第一版：       1 / 200 / 150 / 0.8 / 600 / 0.01
-                                 ^ fragment size 暂用 SICER2 默认值
 ```
 
-这里依次为 redundancy、window、fragment、effective genome fraction、gap 和
-call FDR。公开数据记录见
-[GSM3908304](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSM3908304)。
-目标 PIF 论文只报告使用 TAIR10、WT IgG、合并 biological replicates 和 SICER，
-没有公开这些数值参数：
-[Willige et al.](https://pmc.ncbi.nlm.nih.gov/articles/PMC9169284/)。
-
-`extra` 原样附加到 SICER 命令末尾，只用于没有单列在 TOML 中的原生选项，例如
-`--e_value`、`--significant_reads` 或 `--verbose`；不要在这里重复已有参数。
-
-### TAIR10 genome size
-
-`119667750` 是 UCSC/Ensembl TAIR10 七条序列的 golden-path length，包含五条核
-染色体、叶绿体和线粒体。MACS3 的 `-g` 是背景模型的 genome size，而不是 contig
-白名单。本流程不使用该 MACS3 数值；SICER2 从
-`config/TAIR10.nuclear.chrom.sizes` 读取 Chr1–Chr5 的实际总长 `119146348`，再
-应用 `effective_genome_fraction=0.8`。
-
-服务器当前参考的 `ChrC=154478`、`ChrM=367808`，连同核染色体合计
-`119668634`；这两个 organellar contigs 不进入本 workflow。
-
-## Differential 输出定义
-
-若 contrast 是 `test` 对 `reference`：
-
-- `increased.fdr.txt`：`FDR_test_vs_reference <= false_discovery_rate_df`
-- `decreased.fdr.txt`：`FDR_reference_vs_test <= false_discovery_rate_df`
-- `increased.filtered.txt`：再要求 `test/reference >= min_fold_change`
-- `decreased.filtered.txt`：再要求 `test/reference <= 1/min_fold_change`
-
-`min_fold_change=1.0` 不增加 effect-size 门槛；设为 `1.3` 时，decreased 要求
-`test/reference <= 0.7692`。FDR-only 与 FDR+FC 文件始终分别保存。
-
-SICER2 `sicer_df` 比较 pooled libraries，不建模 biological-replicate variance；它
-不能替代 DiffBind、csaw 或 DESeq2 类 replicate-aware differential analysis。
+即 fragment size 暂用 SICER2 默认的 150 bp，其余参考 Arabidopsis H2A.Z 公开
+设置。以后根据 fragment-size QC 再调整 TOML。
 
 ## 输出
+
+workflow 只负责按 group 或 contrast 创建输出目录：
 
 ```text
 results/
   sicer2/<group>/
-    <group>.islands.bed
-    <group>.islands.summary.txt
-    raw/
   sicer2_diff/<contrast>/
-    <contrast>.all_islands.txt
-    <contrast>.increased.fdr.txt
-    <contrast>.decreased.fdr.txt
-    <contrast>.increased.filtered.txt
-    <contrast>.decreased.filtered.txt
-    raw/
-  run_manifest.txt
   logs/
 ```
 
-`raw/` 保留 SICER2 tool-native 文件；顶层文件提供稳定下游接口。manifest 记录每个
-group 的真实输入文件、参数、module/package version 和结果数量。
-有 control 时，`*.islands.bed` 是通过 call FDR 的 domains；
-`*.islands.summary.txt` 保留全部候选 domains 及其 read counts、p-value、fold
-enrichment 和 FDR，便于日后改阈值而不重跑 SICER。无 control 时二者都来自
-SICER 的 score-island 输出，summary 只增加稳定列名。
-文件身份以 `device:inode:resolved_path` 记录；因此 manifest 同时展示用户提供文件最终
-指向的对象，以及每个 pooled group 实际使用的唯一文件列表。differential 行明确记录
-`test` 和 `reference`，并分别统计 all/FDR-only/FDR+FC 输出数量。
+`sicer2/<group>/` 中是该 group 的 `sicer` 原生输出；
+`sicer2_diff/<contrast>/` 中是该 contrast 的 `sicer_df` 原生输出。包括软件生成的
+score islands、islands summary、FDR island BED、normalized WIG、union islands 和
+increased/decreased islands 等文件。具体有哪些文件由是否提供 control、参数以及
+SICER2 版本决定。
 
-服务器当前 package metadata 是 `SICER 2.1.0`，module 名是 `SICER2/2.1.1`。
-SICER 2.1.0 的 differential 源码仍调用已从新版 SciPy 移除的 `scipy.array`；wrapper
-只在自己的 Python 进程内将它兼容映射到 `numpy.array`，不会修改 `/opt` 安装。
+pooling 后的 BED basename 是：
+
+```text
+<group>.treatment.bed
+<group>.control.bed
+```
+
+所以 SICER2 原生输出文件名会自然包含 group 名。workflow 不复制、不重命名，也不
+解析这些结果文件。
+
+`logs/` 只保存各步骤的标准输出和错误信息，不属于 SICER2 结果整理。
 
 ## 运行
 
-先复制并修改示例 TOML、samples 和 contrasts，然后从仓库根目录执行：
+从仓库根目录执行：
 
 ```bash
 source /etc/profile.d/lmod.sh
@@ -169,34 +146,18 @@ snakemake \
   --cores 10
 ```
 
-每个 SICER task 默认最多使用 5 个线程，因为 TAIR10 nuclear 配置只有 5 条染色体。
+每个 SICER task 默认使用 5 个线程，对应 Chr1–Chr5。
 
-开发测试可运行：
+## 实现说明
 
-```bash
-/opt/conda-envs/SICER2/2.1.1/bin/python -m unittest discover -s tests -v
-```
+服务器 module 名为 `SICER2/2.1.1`，实际 Python package metadata 为
+`SICER 2.1.0`。该 package 的 `sicer_df` 仍调用新版 SciPy 已移除的
+`scipy.array`；wrapper 只在当前 Python 进程内将其映射为 `numpy.array`，不会修改
+`/opt` 安装，也不会改变 SICER2 输出。
 
-## 可选 fragment-size sanity check
+为了使用自定义 TAIR10 Chr1–Chr5 chromosome sizes，wrapper 在进程内注册该 genome
+后直接调用 SICER2 的 `run_SICER` / `run_SICER_df`。除这一注册和 SciPy 兼容处理外，
+结果生成仍由 SICER2 原生代码完成。
 
-该检查不是 workflow 依赖，也不会自动修改 TOML：
-
-```bash
-source /etc/profile.d/lmod.sh
-module load MACS3/3.0.4
-
-macs3 predictd \
-  -i treatment_rep1.bam treatment_rep2.bam \
-  -f BAM \
-  -g 119146348 \
-  --outdir fragment_size_qc
-```
-
-H2A.Z 信号较宽，MACS3 model 可能失败或不稳定，所以这里只用于比较当前文库估计值
-与候选的 100/150 bp，最终值必须人工确认后显式写回 TOML。
-
-## PE 数据
-
-第一版不支持 PE。以后若增加支持，需要独立验证 proper-pair 过滤、真实 fragment
-midpoint、1-bp midpoint BED，以及普通 call 与 differential call 的一致性，不能把
-完整 fragment BED 与 SE 的 `fragment_size/2` shift 混用。
+第一版不支持 PE。若以后支持 PE，需要单独实现和验证真实 fragment midpoint，不能
+将完整 fragment BED 与 SE 的 `fragment_size/2` shift 混用。

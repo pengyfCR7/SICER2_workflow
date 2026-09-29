@@ -4,7 +4,6 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
 
 import numpy as np
 from sicer.lib.associate_tags_with_regions import tag_position
@@ -12,10 +11,8 @@ from sicer.src.remove_redundant_reads import remove_redundant_1chrom_single_stra
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "workflow/lib"))
-sys.path.insert(0, str(ROOT / "workflow/scripts"))
 
 from workflow_io import load_samples
-from run_sicer2 import write_diff_outputs
 
 
 class WorkflowInputTests(unittest.TestCase):
@@ -76,37 +73,6 @@ class WorkflowInputTests(unittest.TestCase):
         )
         total, retained, _ = remove_redundant_1chrom_single_strand_sorted(reads, 1)
         self.assertEqual((total, retained), (2, 1))
-
-    def test_differential_direction_and_fold_change_filter(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            raw = root / "raw"
-            raw.mkdir()
-            source = raw / "test-and-reference-W200-G600-summary"
-            source.write_text(
-                "#chrom\tstart\tend\tReadcount_A\tNormalized_Readcount_A\tReadcountB\t"
-                "Normalized_Readcount_B\tFc_A_vs_B\tpvalue_A_vs_B\tFDR_A_vs_B\t"
-                "Fc_B_vs_A\tpvalue_B_vs_A\tFDR_B_vs_A\n"
-                "Chr1\t0\t200\t20\t2\t10\t1\t1.5\t0.001\t0.005\t0.6667\t1\t1\n"
-                "Chr1\t400\t600\t5\t0.5\t20\t2\t0.7\t1\t1\t1.4286\t0.001\t0.005\n",
-                encoding="utf-8",
-            )
-            args = SimpleNamespace(
-                output_directory=str(raw), window_size=200, gap_size=600,
-                false_discovery_rate_df=0.01, min_fold_change=1.3,
-                all_islands=str(root / "all.txt"),
-                increased_fdr=str(root / "increased.fdr.txt"),
-                decreased_fdr=str(root / "decreased.fdr.txt"),
-                increased_filtered=str(root / "increased.filtered.txt"),
-                decreased_filtered=str(root / "decreased.filtered.txt"),
-            )
-            write_diff_outputs(args)
-            data_rows = lambda path: len(Path(path).read_text(encoding="utf-8").splitlines()) - 1
-            self.assertEqual(data_rows(args.increased_fdr), 1)
-            self.assertEqual(data_rows(args.decreased_fdr), 1)
-            self.assertEqual(data_rows(args.increased_filtered), 1)
-            self.assertEqual(data_rows(args.decreased_filtered), 1)
-
 
 if __name__ == "__main__":
     unittest.main()

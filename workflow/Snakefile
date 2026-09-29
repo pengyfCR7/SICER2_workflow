@@ -1,4 +1,3 @@
-import json
 import sys
 from pathlib import Path
 
@@ -19,120 +18,44 @@ shell.prefix("set -euo pipefail; ")
 if "toml" not in config:
     raise ValueError("Run with --config toml=/path/to/config.toml")
 
-CONFIG_PATH = Path(config["toml"]).resolve()
-with CONFIG_PATH.open("rb") as handle:
+with Path(config["toml"]).resolve().open("rb") as handle:
     CFG = tomllib.load(handle)
 
 
-def config_path(value):
-    path = Path(value).expanduser()
-    if not path.is_absolute():
-        path = Path.cwd() / path
-    return str(path.resolve())
+def full_path(path):
+    path = Path(path).expanduser()
+    return str((Path.cwd() / path).resolve() if not path.is_absolute() else path.resolve())
 
 
-SAMPLES_PATH = config_path(CFG["inputs"]["samples"])
-CONTRASTS_PATH = config_path(CFG["inputs"]["contrasts"])
+SAMPLES = load_samples(full_path(CFG["inputs"]["samples"]))
+GROUPS = SAMPLES["groups"]
+CONTRASTS = load_contrasts(full_path(CFG["inputs"]["contrasts"]), GROUPS)
+
 RESULT_DIR = Path(CFG["output"].get("result_dir", "results"))
+WORK_DIR = RESULT_DIR / ".work"
+LOG_DIR = RESULT_DIR / "logs"
 CALL_CFG = CFG["sicer2_call"]
 DIFF_CFG = CFG["sicer2_diff"]
 COMMANDS = CFG["commands"]
 THREADS = int(CFG.get("resources", {}).get("sicer2_threads", 5))
-CHROM_SIZES = config_path(CALL_CFG["chrom_sizes"])
-
-SAMPLE_INFO = load_samples(SAMPLES_PATH)
-GROUPS = SAMPLE_INFO["groups"]
-CONTRAST_INFO = load_contrasts(CONTRASTS_PATH, GROUPS)
-CONTRASTS = list(CONTRAST_INFO)
-GROUPS_WITH_CONTROL = [group for group in GROUPS if SAMPLE_INFO["group_controls"][group]]
-CONTRASTS_WITH_CONTROL = [
-    name for name in CONTRASTS
-    if SAMPLE_INFO["group_controls"][CONTRAST_INFO[name]["test"]]
-]
-
-WORK_DIR = RESULT_DIR / ".work"
-SICER_DIR = RESULT_DIR / "sicer2"
-DIFF_DIR = RESULT_DIR / "sicer2_diff"
-LOG_DIR = RESULT_DIR / "logs"
+CHROM_SIZES = full_path(CALL_CFG["chrom_sizes"])
 
 POOL_SCRIPT = WORKFLOW_DIR / "scripts/pool_se_bams.py"
 RUN_SCRIPT = WORKFLOW_DIR / "scripts/run_sicer2.py"
-MANIFEST_SCRIPT = WORKFLOW_DIR / "scripts/build_manifest.py"
 
 
-def pooled_treatment(group):
+def treatment_bed(group):
     return str(WORK_DIR / "pooled" / f"{group}.treatment.bed")
 
 
-def pooled_control(group):
+def control_bed(group):
     return str(WORK_DIR / "pooled" / f"{group}.control.bed")
-
-
-def contrast_groups(name):
-    item = CONTRAST_INFO[name]
-    return item["test"], item["reference"]
-
-
-def manifest_spec():
-    spec = {
-        "sicer2_python": COMMANDS["sicer2_python"],
-        "sicer2_module": CFG.get("software", {}).get("sicer2_module", "unknown"),
-        "call_parameters": dict(CALL_CFG),
-        "diff_parameters": dict(DIFF_CFG),
-        "groups": [],
-        "contrasts": [],
-    }
-    for group in GROUPS:
-        spec["groups"].append(
-            {
-                "group": group,
-                "treatment_files": SAMPLE_INFO["group_treatments"][group],
-                "control_files": SAMPLE_INFO["group_controls"][group],
-                "result_files": {
-                    "islands": str(SICER_DIR / group / f"{group}.islands.bed"),
-                    "summary": str(SICER_DIR / group / f"{group}.islands.summary.txt"),
-                },
-            }
-        )
-    for name, item in CONTRAST_INFO.items():
-        test = item["test"]
-        reference = item["reference"]
-        spec["contrasts"].append(
-            {
-                **item,
-                "test_treatment_files": SAMPLE_INFO["group_treatments"][test],
-                "reference_treatment_files": SAMPLE_INFO["group_treatments"][reference],
-                "test_control_files": SAMPLE_INFO["group_controls"][test],
-                "reference_control_files": SAMPLE_INFO["group_controls"][reference],
-                "result_files": {
-                    "all": str(DIFF_DIR / name / f"{name}.all_islands.txt"),
-                    "increased_fdr": str(DIFF_DIR / name / f"{name}.increased.fdr.txt"),
-                    "decreased_fdr": str(DIFF_DIR / name / f"{name}.decreased.fdr.txt"),
-                    "increased_filtered": str(DIFF_DIR / name / f"{name}.increased.filtered.txt"),
-                    "decreased_filtered": str(DIFF_DIR / name / f"{name}.decreased.filtered.txt"),
-                },
-            }
-        )
-    return spec
-
-
-MANIFEST_SPEC = WORK_DIR / "manifest_spec.json"
-MANIFEST_SPEC.parent.mkdir(parents=True, exist_ok=True)
-manifest_text = json.dumps(manifest_spec(), indent=2) + "\n"
-if not MANIFEST_SPEC.exists() or MANIFEST_SPEC.read_text(encoding="utf-8") != manifest_text:
-    MANIFEST_SPEC.write_text(manifest_text, encoding="utf-8")
 
 
 rule all:
     input:
-        expand(str(SICER_DIR / "{group}/{group}.islands.bed"), group=GROUPS),
-        expand(str(SICER_DIR / "{group}/{group}.islands.summary.txt"), group=GROUPS),
-        expand(str(DIFF_DIR / "{contrast}/{contrast}.all_islands.txt"), contrast=CONTRASTS),
-        expand(str(DIFF_DIR / "{contrast}/{contrast}.increased.fdr.txt"), contrast=CONTRASTS),
-        expand(str(DIFF_DIR / "{contrast}/{contrast}.decreased.fdr.txt"), contrast=CONTRASTS),
-        expand(str(DIFF_DIR / "{contrast}/{contrast}.increased.filtered.txt"), contrast=CONTRASTS),
-        expand(str(DIFF_DIR / "{contrast}/{contrast}.decreased.filtered.txt"), contrast=CONTRASTS),
-        str(RESULT_DIR / "run_manifest.txt")
+        expand(str(RESULT_DIR / "sicer2/{group}"), group=GROUPS),
+        expand(str(RESULT_DIR / "sicer2_diff/{contrast}"), contrast=list(CONTRASTS))
 
 
 include: "rules/sicer2.smk"

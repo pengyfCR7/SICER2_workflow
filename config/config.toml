@@ -10,9 +10,6 @@ sicer2_python = "/opt/conda-envs/SICER2/2.1.1/bin/python"
 samtools = "/opt/conda-envs/samtools/1.24/bin/samtools"
 bedtools = "/opt/conda-envs/bedtools/2.31.1/bin/bedtools"
 
-[software]
-sicer2_module = "SICER2/2.1.1"
-
 [sicer2_call]
 chrom_sizes = "config/TAIR10.nuclear.chrom.sizes"
 redundancy_threshold = 1
@@ -25,7 +22,6 @@ extra = ""
 
 [sicer2_diff]
 false_discovery_rate_df = 0.01
-min_fold_change = 1.0
 extra = ""
 
 [resources]
