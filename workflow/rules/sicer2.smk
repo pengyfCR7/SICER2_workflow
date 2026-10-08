@@ -24,28 +24,21 @@ rule pool_control_bed:
         temp(str(WORK_DIR / "pooled/{group}.control.bed"))
     log:
         str(LOG_DIR / "pool/{group}.control.log")
-    run:
-        if not input:
-            raise ValueError(f"Group {wildcards.group} has no control")
-        shell(
-            "mkdir -p $(dirname {output:q}) $(dirname {log:q}); "
-            "python3 {POOL_SCRIPT:q} "
-            "--samtools {COMMANDS[samtools]:q} --bedtools {COMMANDS[bedtools]:q} "
-            "--chrom-sizes {CHROM_SIZES:q} --output {output:q} "
-            "--bam {input:q} > {log:q} 2>&1"
-        )
-
-
-def call_inputs(wc):
-    files = {"treatment": treatment_bed(wc.group)}
-    if GROUP_CONTROLS[wc.group]:
-        files["control"] = control_bed(wc.group)
-    return files
+    shell:
+        """
+        mkdir -p $(dirname {output:q}) $(dirname {log:q})
+        python3 {POOL_SCRIPT:q} \
+          --samtools {COMMANDS[samtools]:q} \
+          --bedtools {COMMANDS[bedtools]:q} \
+          --chrom-sizes {CHROM_SIZES:q} \
+          --output {output:q} \
+          --bam {input:q} > {log:q} 2>&1
+        """
 
 
 rule sicer:
     input:
-        unpack(call_inputs)
+        unpack(lambda wc: CALL_INPUTS[wc.group])
     output:
         directory(str(RESULT_DIR / "sicer2/{group}"))
     threads:
@@ -71,24 +64,9 @@ rule sicer:
         """
 
 
-def diff_inputs(wc):
-    test = CONTRAST_TABLE.at[wc.contrast, "test"]
-    reference = CONTRAST_TABLE.at[wc.contrast, "reference"]
-    test_has_control = bool(GROUP_CONTROLS[test])
-    reference_has_control = bool(GROUP_CONTROLS[reference])
-    if test_has_control != reference_has_control:
-        raise ValueError(f"Contrast {wc.contrast} mixes groups with and without control")
-
-    files = {"test": treatment_bed(test), "reference": treatment_bed(reference)}
-    if test_has_control:
-        files["test_control"] = control_bed(test)
-        files["reference_control"] = control_bed(reference)
-    return files
-
-
 rule sicer_df:
     input:
-        unpack(diff_inputs)
+        unpack(lambda wc: DIFF_INPUTS[wc.contrast])
     output:
         directory(str(RESULT_DIR / "sicer2_diff/{contrast}"))
     threads:

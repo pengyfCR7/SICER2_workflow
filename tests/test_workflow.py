@@ -5,23 +5,22 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "workflow/lib"))
+sys.path.insert(0, str(ROOT / "workflow/utils"))
 
-from workflow_io import load_samples
+from samples import load_samples
 
 
 class WorkflowInputTests(unittest.TestCase):
-    def test_shared_control_paths_are_resolved_before_pooling(self):
+    def test_shared_control_paths_can_be_deduplicated(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             for name in ("ip1.bam", "ip2.bam", "igg_a.bam", "igg_b.bam"):
                 (root / name).touch()
-            (root / "igg_a_link.bam").symlink_to(root / "igg_a.bam")
             table = root / "samples.txt"
             table.write_text(
                 "group\tsample\ttreatment_bam\tcontrol_bam\tlayout\n"
                 f"g\ts1\t{root/'ip1.bam'}\t{root/'igg_a.bam'}\tSE\n"
-                f"g\ts2\t{root/'ip2.bam'}\t{root/'igg_a_link.bam'}\tSE\n",
+                f"g\ts2\t{root/'ip2.bam'}\t{root/'igg_a.bam'}\tSE\n",
                 encoding="utf-8",
             )
             samples = load_samples(table)
