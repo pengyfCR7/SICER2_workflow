@@ -28,8 +28,21 @@ def full_path(path):
 
 
 SAMPLES = load_samples(full_path(CFG["inputs"]["samples"]))
-GROUPS = SAMPLES["groups"]
-CONTRASTS = load_contrasts(full_path(CFG["inputs"]["contrasts"]), GROUPS)
+GROUPS = SAMPLES["group"].drop_duplicates().tolist()
+
+GROUP_TREATMENTS = {
+    group: rows["treatment_bam"].tolist()
+    for group, rows in SAMPLES.groupby("group", sort=False)
+}
+GROUP_CONTROLS = {
+    group: rows.loc[rows["control_bam"].ne(""), "control_bam"].drop_duplicates().tolist()
+    for group, rows in SAMPLES.groupby("group", sort=False)
+}
+
+CONTRAST_TABLE = load_contrasts(
+    full_path(CFG["inputs"]["contrasts"]), GROUPS
+).set_index("contrast")
+CONTRASTS = CONTRAST_TABLE.index.tolist()
 
 RESULT_DIR = Path(CFG["output"].get("result_dir", "results"))
 WORK_DIR = RESULT_DIR / ".work"

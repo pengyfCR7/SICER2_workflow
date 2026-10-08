@@ -1,86 +1,69 @@
-import csv
 from pathlib import Path
 
-
-def read_table(path, required_columns):
-    path = Path(path).resolve()
-    with path.open(newline="", encoding="utf-8") as handle:
-        reader = csv.DictReader(handle, delimiter="\t")
-        missing = set(required_columns) - set(reader.fieldnames or [])
-        if missing:
-            raise ValueError(f"Missing columns in {path}: {sorted(missing)}")
-        return [
-            {key: (value or "").strip() for key, value in row.items()}
-            for row in reader
-            if any((value or "").strip() for value in row.values())
-        ]
-
-
-def real_file(path, table_dir):
-    path = Path(path).expanduser()
-    if not path.is_absolute():
-        path = table_dir / path
-    return str(path.resolve(strict=True))
-
-
-def unique_files(paths):
-    unique = []
-    seen = set()
-    for path in paths:
-        stat = Path(path).stat()
-        identity = (stat.st_dev, stat.st_ino)
-        if identity not in seen:
-            seen.add(identity)
-            unique.append(path)
-    return unique
+import pandas as pd
 
 
 def load_samples(path):
-    table = Path(path).resolve()
-    rows = read_table(
-        table,
-        ["group", "sample", "treatment_bam", "control_bam", "layout"],
-    )
-    if not rows:
-        raise ValueError(f"No samples found in {table}")
-    if len({row["sample"] for row in rows}) != len(rows):
+    """Read and check the replicate table."""
+    path = Path(path).resolve()
+    columns = ["group", "sample", "treatment_bam", "control_bam", "layout"]
+    samples = pd.read_csv(path, sep="\t", dtype=str, keep_default_na=False)
+
+    missing = [column for column in columns if column not in samples]
+    if missing:
+        raise ValueError(f"Missing columns in {path}: {missing}")
+
+    samples = samples[columns].apply(lambda column: column.str.strip())
+    if samples.empty:
+        raise ValueError(f"No samples found in {path}")
+    if samples[["group", "sample", "treatment_bam"]].eq("").any().any():
+        raise ValueError("group, sample and treatment_bam are required")
+    if samples["sample"].duplicated().any():
         raise ValueError("sample names must be unique")
+    if not samples["layout"].str.upper().eq("SE").all():
+        raise ValueError("SICER2_workflow v1 supports only layout=SE")
+    samples["layout"] = "SE"
 
-    for row in rows:
-        if not row["group"] or not row["sample"] or not row["treatment_bam"]:
-            raise ValueError("group, sample and treatment_bam are required")
-        if row["layout"].upper() != "SE":
-            raise ValueError("SICER2_workflow v1 supports only layout=SE")
-        row["treatment_bam"] = real_file(row["treatment_bam"], table.parent)
-        if row["control_bam"]:
-            row["control_bam"] = real_file(row["control_bam"], table.parent)
+    # Resolve paths once, so repeated controls and symlinks become the same path.
+    for column in ["treatment_bam", "control_bam"]:
+        resolved = []
+        for value in samples[column]:
+            if not value:
+                resolved.append("")
+                continue
+            bam = Path(value).expanduser()
+            if not bam.is_absolute():
+                bam = path.parent / bam
+            resolved.append(str(bam.resolve(strict=True)))
+        samples[column] = resolved
 
-    groups = list(dict.fromkeys(row["group"] for row in rows))
-    treatments = {}
-    controls = {}
-    for group in groups:
-        members = [row for row in rows if row["group"] == group]
-        treatments[group] = [row["treatment_bam"] for row in members]
-        group_controls = [row["control_bam"] for row in members]
-        if any(group_controls) and not all(group_controls):
+    for group, rows in samples.groupby("group", sort=False):
+        has_control = rows["control_bam"].ne("")
+        if has_control.any() and not has_control.all():
             raise ValueError(f"Group {group} mixes samples with and without control")
-        controls[group] = unique_files(group_controls) if all(group_controls) else []
 
-    return {
-        "groups": groups,
-        "group_treatments": treatments,
-        "group_controls": controls,
-    }
+    return samples
 
 
 def load_contrasts(path, groups):
-    rows = read_table(path, ["contrast", "test", "reference"])
-    contrasts = {}
-    for row in rows:
-        name = row["contrast"]
-        if name in contrasts:
-            raise ValueError(f"Duplicate contrast: {name}")
-        if row["test"] not in groups or row["reference"] not in groups:
-            raise ValueError(f"Unknown group in contrast: {name}")
-        contrasts[name] = row
+    """Read contrasts and confirm that their groups exist."""
+    path = Path(path).resolve()
+    columns = ["contrast", "test", "reference"]
+    contrasts = pd.read_csv(path, sep="\t", dtype=str, keep_default_na=False)
+
+    missing = [column for column in columns if column not in contrasts]
+    if missing:
+        raise ValueError(f"Missing columns in {path}: {missing}")
+
+    contrasts = contrasts[columns].apply(lambda column: column.str.strip())
+    if contrasts["contrast"].duplicated().any():
+        raise ValueError("contrast names must be unique")
+    if contrasts[["contrast", "test", "reference"]].eq("").any().any():
+        raise ValueError("contrast, test and reference are required")
+
+    unknown = set(contrasts["test"]) | set(contrasts["reference"])
+    unknown -= set(groups)
+    if unknown:
+        raise ValueError(f"Unknown groups in contrasts: {sorted(unknown)}")
+
     return contrasts

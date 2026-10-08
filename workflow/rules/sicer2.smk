@@ -1,6 +1,6 @@
 rule pool_treatment_bed:
     input:
-        lambda wc: SAMPLES["group_treatments"][wc.group]
+        lambda wc: GROUP_TREATMENTS[wc.group]
     output:
         temp(str(WORK_DIR / "pooled/{group}.treatment.bed"))
     log:
@@ -19,7 +19,7 @@ rule pool_treatment_bed:
 
 rule pool_control_bed:
     input:
-        lambda wc: SAMPLES["group_controls"][wc.group]
+        lambda wc: GROUP_CONTROLS[wc.group]
     output:
         temp(str(WORK_DIR / "pooled/{group}.control.bed"))
     log:
@@ -38,7 +38,7 @@ rule pool_control_bed:
 
 def call_inputs(wc):
     files = {"treatment": treatment_bed(wc.group)}
-    if SAMPLES["group_controls"][wc.group]:
+    if GROUP_CONTROLS[wc.group]:
         files["control"] = control_bed(wc.group)
     return files
 
@@ -72,10 +72,10 @@ rule sicer:
 
 
 def diff_inputs(wc):
-    test = CONTRASTS[wc.contrast]["test"]
-    reference = CONTRASTS[wc.contrast]["reference"]
-    test_has_control = bool(SAMPLES["group_controls"][test])
-    reference_has_control = bool(SAMPLES["group_controls"][reference])
+    test = CONTRAST_TABLE.at[wc.contrast, "test"]
+    reference = CONTRAST_TABLE.at[wc.contrast, "reference"]
+    test_has_control = bool(GROUP_CONTROLS[test])
+    reference_has_control = bool(GROUP_CONTROLS[reference])
     if test_has_control != reference_has_control:
         raise ValueError(f"Contrast {wc.contrast} mixes groups with and without control")
 

@@ -39,10 +39,11 @@ WT_WL  WT_WL_rep2  /path/IP2.bam  /path/IgG_A.bam  SE
   pooled BAM。
 - pooled BED 只保留 `config/TAIR10.nuclear.chrom.sizes` 中的 Chr1–Chr5。
 
-同一个 control 文件在多行重复填写时，只 pool 一次。文件身份按真实文件判断，所以
-普通路径、指向同一文件的 symlink 和 hardlink 会被视作同一个文件。
+同一个 control BAM 路径在多行重复填写时只 pool 一次。读取样本表时会先把相对路径
+转换为绝对路径并解析 symlink，再由 pandas `drop_duplicates()` 去掉同组内重复路径。
+workflow 不对 BAM 内的 genomic read coordinates 做额外去重。
 
-> Deduplication of shared controls is performed by input-file identity, not genomic read coordinates.
+> Deduplication of shared controls is performed by resolved input path, not genomic read coordinates.
 
 两个独立 BAM 中坐标相同的 reads 都会先进入 pooled BED。随后 SICER 根据
 `redundancy_threshold` 执行自身的原生坐标去冗余。
